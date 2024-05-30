@@ -1,0 +1,15 @@
+# zig
+zig-cache/
+zig-out/
+build/
+build-*/
+docgen_tmp/
+
+# direnv
+.direnv
+.envrc
+
+# nix
+result
+result-*
+repl-result-*
