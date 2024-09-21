@@ -35,11 +35,15 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        zig = zig-overlay.packages.${system}.${zigVersion};
+        zig = zig-overlay.packages.${system}.${zigVersion}.overrideAttrs {
+          # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
+          # zig-overlay doesn't provide this...yay
+          inherit (pkgs.zig) meta;
+        };
       in
       rec {
         devShells.default = pkgs.mkShellNoCC {
-          inputsFrom = [ self.packages.${system}.ziggy-with-it ];
+          packages = [ zig ];
         };
 
         formatter = pkgs.nixfmt-rfc-style;
@@ -69,13 +73,8 @@
             '';
 
             nativeBuildInputs = [
-              (pkgs.zig.hook.override {
-                zig = zig.overrideAttrs {
-                  # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
-                  # zig-overlay doesn't provide this...yay
-                  inherit (pkgs.zig) meta;
-                };
-              })
+              # We can use nixpkgs' `zig.hook`, but with our own `zig`
+              (pkgs.zig.hook.override { inherit zig; })
             ];
           };
         };
