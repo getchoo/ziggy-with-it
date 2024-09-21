@@ -25,10 +25,8 @@
       zig-overlay,
     }:
     let
-      inherit (nixpkgs) lib;
-
       # https://github.com/mitchellh/zig-overlay?tab=readme-ov-file#usage
-      zigVersion = "master-2024-05-08";
+      zigVersion = "0.13.0";
     in
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -51,20 +49,12 @@
         packages = {
           default = packages.ziggy-with-it;
 
+          # NOTE: We use `stdenvNoCC` here as `zig` is all we need
           ziggy-with-it = pkgs.stdenvNoCC.mkDerivation {
             pname = "ziggy-with-it";
             version = self.shortRev or self.dirtyShortRev or "waaaa";
 
-            src =
-              with lib.fileset;
-              toSource {
-                root = ./.;
-                fileset = unions [
-                  (gitTracked ./src)
-                  ./build.zig
-                  ./build.zig.zon
-                ];
-              };
+            src = self;
 
             # `deps.nix` is generated with by running `zon2nix`
             # https://github.com/nix-community/zon2nix
