@@ -3,9 +3,17 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    flake-utils.url = "github:numtide/flake-utils";
+
     zig-overlay = {
       url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+        # We don't use this
+        flake-compat.follows = "";
+      };
     };
   };
 
@@ -13,48 +21,32 @@
     {
       self,
       nixpkgs,
+      flake-utils,
       zig-overlay,
-      ...
     }:
     let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
-
-      forAllSystems = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
+      inherit (nixpkgs) lib;
 
       # https://github.com/mitchellh/zig-overlay?tab=readme-ov-file#usage
       zigVersion = "master-2024-05-08";
-      zigFor = system: zig-overlay.packages.${system}.${zigVersion};
     in
-    {
-      devShells = forAllSystems (
-        {
-          pkgs,
-          system,
-          ...
-        }:
-        {
-          default = pkgs.mkShellNoCC {
-            inputsFrom = [ self.packages.${system}.ziggy-with-it ];
-          };
-        }
-      );
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
 
-      formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
+        zig = zig-overlay.packages.${system}.${zigVersion};
+      in
+      rec {
+        devShells.default = pkgs.mkShellNoCC {
+          inputsFrom = [ self.packages.${system}.ziggy-with-it ];
+        };
 
-      packages = forAllSystems (
-        {
-          lib,
-          pkgs,
-          system,
-          ...
-        }:
-        rec {
-          default = ziggy-with-it;
+        formatter = pkgs.nixfmt-rfc-style;
+
+        packages = {
+          default = packages.ziggy-with-it;
+
           ziggy-with-it = pkgs.stdenvNoCC.mkDerivation {
             pname = "ziggy-with-it";
             version = self.shortRev or self.dirtyShortRev or "waaaa";
@@ -78,15 +70,15 @@
 
             nativeBuildInputs = [
               (pkgs.zig.hook.override {
-                # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
-                # zig-overlay requires this `meta` attribute..yay
-                zig = zigFor system // {
+                zig = zig.overrideAttrs {
+                  # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
+                  # zig-overlay doesn't provide this...yay
                   inherit (pkgs.zig) meta;
                 };
               })
             ];
           };
-        }
-      );
-    };
+        };
+      }
+    );
 }
