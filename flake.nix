@@ -3,76 +3,71 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    flake-utils.url = "github:numtide/flake-utils";
+
     zig-overlay = {
       url = "github:mitchellh/zig-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        flake-utils.follows = "flake-utils";
+        # We don't use this
+        flake-compat.follows = "";
+      };
     };
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    zig-overlay,
-    ...
-  }: let
-    systems = [
-      "x86_64-linux"
-      "aarch64-linux"
-      "x86_64-darwin"
-      "aarch64-darwin"
-    ];
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      zig-overlay,
+    }:
+    let
+      # https://github.com/mitchellh/zig-overlay?tab=readme-ov-file#usage
+      zigVersion = "0.13.0";
+    in
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
 
-    forAllSystems = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
+        zig = zig-overlay.packages.${system}.${zigVersion}.overrideAttrs {
+          # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
+          # zig-overlay doesn't provide this...yay
+          inherit (pkgs.zig) meta;
+        };
+      in
+      rec {
+        devShells.default = pkgs.mkShellNoCC {
+          packages = [ zig ];
+        };
 
-    # https://github.com/mitchellh/zig-overlay?tab=readme-ov-file#usage
-    zigVersion = "master-2024-05-08";
-    zigFor = system: zig-overlay.packages.${system}.${zigVersion};
-  in {
-    devShells = forAllSystems ({
-      pkgs,
-      system,
-      ...
-    }: {
-      default = pkgs.mkShellNoCC {
-        inputsFrom = [self.packages.${system}.ziggy-with-it];
-      };
-    });
+        formatter = pkgs.nixfmt-rfc-style;
 
-    packages = forAllSystems ({
-      lib,
-      pkgs,
-      system,
-      ...
-    }: rec {
-      default = ziggy-with-it;
-      ziggy-with-it = pkgs.stdenvNoCC.mkDerivation {
-        pname = "ziggy-with-it";
-        version = self.shortRev or self.dirtyShortRev or "waaaa";
+        packages = {
+          default = packages.ziggy-with-it;
 
-        src = with lib.fileset;
-          toSource {
-            root = ./.;
-            fileset = unions [
-              (gitTracked ./src)
-              ./build.zig
-              ./build.zig.zon
+          # NOTE: We use `stdenvNoCC` here as `zig` is all we need
+          ziggy-with-it = pkgs.stdenvNoCC.mkDerivation {
+            pname = "ziggy-with-it";
+            version = self.shortRev or self.dirtyShortRev or "waaaa";
+
+            src = self;
+
+            # `deps.nix` is generated with by running `zon2nix`
+            # https://github.com/nix-community/zon2nix
+            postPatch = ''
+              ln -s ${pkgs.callPackage ./deps.nix { }} $ZIG_GLOBAL_CACHE_DIR/p
+            '';
+
+            nativeBuildInputs = [
+              # We can use nixpkgs' `zig.hook`, but with our own `zig`
+              (pkgs.zig.hook.override { inherit zig; })
             ];
           };
-
-        # `deps.nix` is generated with by running `zon2nix`
-        # https://github.com/nix-community/zon2nix
-        postPatch = ''
-          ln -s ${pkgs.callPackage ./deps.nix {}} $ZIG_GLOBAL_CACHE_DIR/p
-        '';
-
-        nativeBuildInputs = [
-          (pkgs.zig.hook.override {
-            # FIXME: `zig.hook` requires `zig` to have it's `meta` attribute
-            # zig-overlay requires this `meta` attribute..yay
-            zig = zigFor system // {inherit (pkgs.zig) meta;};
-          })
-        ];
-      };
-    });
-  };
+        };
+      }
+    );
 }
