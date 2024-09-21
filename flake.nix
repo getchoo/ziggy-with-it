@@ -38,6 +38,8 @@
       };
     });
 
+    formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
+
     packages = forAllSystems ({
       lib,
       pkgs,
